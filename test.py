@@ -1,6 +1,6 @@
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 import plotly.express as px
 import pandas as pd
 import numpy as np
@@ -15,24 +15,22 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+print("=== Запуск скрипта дашборда ===")
+
 file_path = './adult 3 (1).csv'
 df = pd.read_csv(file_path)
 df = df.replace('?', pd.NA).dropna()
-# Create the app
-app = dash.Dash(__name__)
+
 
 numeric_cols = ['age', 'educational-num', 'capital-gain', 'capital-loss', 'hours-per-week']
 df_analysis = df.copy()
 df_analysis['income_num'] = (df_analysis['income'] == '>50K').astype(int)
 
-
-
-# --- Создание подграфиков (subplots) ---
-# Рассчитываем количество строк и столбцов для сетки
+# --- Создание подграфиков (subplots) для гистограмм ---
 rows = 2
 cols = 3
 
-fig = make_subplots(
+fig = make_subplots( # Переименовал из fig_hist, т.к. в layout используется fig
     rows=rows, cols=cols,
     subplot_titles=numeric_cols,
     horizontal_spacing=0.08,
@@ -54,8 +52,7 @@ for i, col in enumerate(numeric_cols):
     row_pos = (i // cols) + 1
     col_pos = (i % cols) + 1
 
-    # Добавляем гистограмму
-    fig.add_trace(
+    fig.add_trace( # Переименовал из fig_hist.add_trace
         go.Histogram(
             x=data,
             nbinsx=count_intervals,
@@ -68,14 +65,10 @@ for i, col in enumerate(numeric_cols):
         row=row_pos, col=col_pos
     )
 
-    
-
-    # Настройка подписей осей для каждого подграфика
     fig.update_xaxes(title_text="Значение", row=row_pos, col=col_pos)
     fig.update_yaxes(title_text="Частота", row=row_pos, col=col_pos)
 
-# Общий заголовок
-fig.update_layout(
+fig.update_layout( # Переименовал из fig_hist.update_layout
     title={
         'text': "Распределения числовых признаков",
         'x': 0.5,
@@ -83,14 +76,14 @@ fig.update_layout(
         'font': {'size': 16}
     },
     showlegend=False,
-    height=700,  # Увеличиваем высоту, чтобы графики не были слишком маленькими
-    width=1400,  # Ширина для 3 столбцов
+    height=700,
+    width=1400,
 )
 
-
+# --- Матрица корреляции ---
 corr_data = df_analysis[numeric_cols]
-correlation_matrix = corr_data.corr(method='pearson') # Можно использовать 'spearman' или 'kendall'
-labels = numeric_cols  # Порядок признаков
+correlation_matrix = corr_data.corr(method='pearson')
+labels = numeric_cols
 
 fig_corr = go.Figure(data=go.Heatmap(
     z=correlation_matrix.values,
@@ -123,12 +116,42 @@ fig_corr.update_layout(
     xaxis_title="Признаки",
     yaxis_title="Признаки",
     height=600,
-    # width=800, # <-- Закомментировано! Пусть Plotly определяет ширину автоматически
     xaxis={'side': 'bottom', 'tickangle': 45},
     yaxis={'side': 'left', 'autorange': 'reversed'},
-    margin=dict(l=50, r=50, t=80, b=50), # Опционально: добавляем отступы, чтобы подписи не обрезались
+    margin=dict(l=50, r=50, t=80, b=50),
 )
 
+# --- Матрица диаграмм рассеивания (Scatter Matrix) ---
+df_analysis_for_scatter = df_analysis.copy()
+df_analysis_for_scatter['income_num'] = df_analysis_for_scatter['income_num'].astype(str)
+
+# Теперь используем преобразованный датафрейм
+fig_scatter_px = px.scatter_matrix(
+    df_analysis_for_scatter,  # <-- Используем копию с изменённым типом
+    dimensions=numeric_cols,
+    color='income_num',
+    color_discrete_map={'0': 'lightcoral', '1': 'lightgreen'}, # <-- Важно: ключи теперь строки!
+    title="Матрица диаграмм рассеивания числовых признаков"
+)
+
+fig_scatter_px.update_layout(
+    title={
+        'text': "Матрица диаграмм рассеивания числовых признаков",
+        'x': 0.5,
+        'xanchor': 'center',
+        'font': {'size': 16}
+    },
+    height=1000,
+    width=1000,
+    legend=dict(
+        title="Доход >50K", # Название легенды
+        orientation="v",
+        yanchor="top",
+        y=1,
+        xanchor="left",
+        x=1.02
+    )
+)
 
 # --- Dash layout ---
 app = dash.Dash(__name__)
@@ -136,15 +159,24 @@ app = dash.Dash(__name__)
 app.layout = html.Div([
     html.H1("Визуализация данных (Dashboard)", style={'textAlign': 'center'}),
 
-    # Блок с гистограммами
     html.H2("Гистограммы распределений", style={'textAlign': 'center'}),
     dcc.Graph(id='multi-histogram-graph', figure=fig),
 
-    # Блок с тепловой картой
     html.H2("Матрица корреляции", style={'textAlign': 'center'}),
     dcc.Graph(id='correlation-heatmap', figure=fig_corr, style={'height': '600px'}),
+
+    html.H2("Матрица диаграмм рассеивания", style={'textAlign': 'center'}), # <-- Изменён заголовок
+    dcc.Graph(
+        id='scatter-matrix',
+        figure=fig_scatter_px,
+        style={
+            'display': 'block',
+            'margin-left': 'auto',
+            'margin-right': 'auto',
+            'width': '1000px'  # <-- Фиксируем ширину
+        }
+    ),
 ])
 
-
 if __name__ == '__main__':
-   app.run(debug=True) # Run the Dash app
+   app.run(debug=True)
