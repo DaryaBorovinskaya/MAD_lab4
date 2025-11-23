@@ -1,141 +1,227 @@
+# app.py
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import plotly.express as px
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.metrics import roc_curve, auc, confusion_matrix
 import joblib
-import matplotlib.pyplot as plt
-import pandas as pd
-from io import BytesIO
-import base64
-import os
+import numpy as np
+from sklearn.metrics import roc_curve, auc, confusion_matrix
 
-# --- Загрузка предобученных данных ---
-MODEL_PATH = "models/decision_tree_model.joblib"
+# === Загрузка данных ===
+prep = joblib.load('models/preprocessors.joblib')
+X_test = prep['X_test']
+y_test = prep['y_test']
+X_test_pca2 = prep['X_test_pca2']
+X_test_pca3 = prep['X_test_pca3']
+feature_names = prep['feature_names']
 
-if not os.path.exists(MODEL_PATH):
-    print("Модель не найдена! Запустите: python train_model.py")
-    exit()
+# Цвета
+COLOR_LE50K = '#3498db'   # синий
+COLOR_GT50K = '#e74c3c'   # красный
 
-data = joblib.load(MODEL_PATH)
+app = dash.Dash(__name__)
+app.title = "Adult Income → Дерево решений (чисто Plotly)"
 
-scaler = data['scaler']
-pca_2d = data['pca_2d']
-pca_3d = data['pca_3d']
-X_test_scaled = data['X_test_scaled']
-X_test_pca2 = data['X_test_pca2']
-X_test_pca3 = data['X_test_pca3']
-X_test = data['X_test']
-y_test = data['y_test']
-le_income = data['le_income']
-feature_names = data['feature_names']
+app.layout = html.Div([
+    html.H1("Дерево решений + ROC + PCA (без Graphviz и Matplotlib)",
+            style={'textAlign': 'center', 'color': '#2c3e50', 'margin': '40px 0'}),
 
-# --- Функции ---
-def plot_tree_img(depth):
-    clf = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=5, random_state=42)
-    clf.fit(X_test, y_test)  # обучаем на тесте для визуализации (можно и на train)
+    html.Div([
+        html.Label("Глубина дерева:", style={'fontWeight': 'bold', 'fontSize': 18}),
+        dcc.Dropdown(id='depth-dropdown',
+                     options=[{'label': f'Глубина {d}', 'value': d} for d in range(2, 9)],
+                     value=4, clearable=False,
+                     style={'width': '400px', 'margin': '20px auto'})
+    ], style={'textAlign': 'center'}),
 
-    fig, ax = plt.subplots(figsize=(20, 12))
-    plot_tree(clf, feature_names=feature_names, class_names=['<=50K', '>50K'],
-              filled=True, rounded=True, fontsize=9, ax=ax)
-    plt.title(f"Дерево решений (глубина = {depth})")
+    html.Div(id='dashboard')
+], style={'fontFamily': 'Arial', 'backgroundColor': '#f8f9fa', 'padding': '20px'})
 
-    buf = BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode('utf-8')
 
-def get_predictions(depth):
-    clf = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=5, random_state=42)
-    clf.fit(X_test, y_test)  # можно и на train, но для простоты
-    y_pred = clf.predict(X_test)
-    y_pred_proba = clf.predict_proba(X_test)[:, 1]
+# ==================== ЧИСТО PLOTLY ДЕРЕВО ====================
+def plotly_tree(model, feature_names, class_names=["≤50K", ">50K"], max_depth=4):
+    tree = model.tree_
+    fig = go.Figure()
+
+    node_traces = []
+    edge_traces = []
+
+    def recurse(node_id, x, y, dx, parent_x=None, parent_y=None):
+        value = tree.value[node_id][0]
+        total = value.sum()
+        if total == 0:
+            return
+
+        # Цвет
+        majority_class = 1 if value[1] > value[0] else 0
+        color = "#e74c3c" if majority_class == 0 else "#3498db"
+
+        # Текст
+        if tree.children_left[node_id] == tree.children_right[node_id] == -1:
+            text = (
+                f"<b>{class_names[majority_class]}</b><br>"
+                f"samples = {int(total)}<br>"
+                f"value = [{int(value[0])}, {int(value[1])}]<br>"
+                f"gini = {tree.impurity[node_id]:.3f}"
+            )
+        else:
+            feat = feature_names[tree.feature[node_id]]
+            thr = tree.threshold[node_id]
+            text = (
+                f"{feat} ≤ {thr:.3f}<br>"
+                f"samples = {int(total)}<br>"
+                f"value = [{int(value[0])}, {int(value[1])}]<br>"
+                f"gini = {tree.impurity[node_id]:.3f}"
+            )
+
+        # === Сначала сохраняем узел в node_traces ===
+        node_traces.append(go.Scatter(
+            x=[x], y=[y],
+            text=[text],
+            mode="markers+text",
+            textposition="middle center",
+            marker=dict(
+                size=110,
+                color=color,
+                line=dict(width=3, color="#333")
+            ),
+            textfont=dict(size=11, color="#000"),
+            hoverinfo="text",
+            showlegend=False,
+        ))
+
+        # === Линия к родителю → сохраняем отдельно ===
+        if parent_x is not None:
+            edge_traces.append(go.Scatter(
+                x=[parent_x, x], y=[parent_y, y],
+                mode="lines",
+                line=dict(color="#555", width=2),
+                hoverinfo="none",
+                showlegend=False,
+            ))
+
+        # Рекурсия
+        left = tree.children_left[node_id]
+        right = tree.children_right[node_id]
+        if left != -1:
+            recurse(left, x - dx, y - 1, dx * 0.65, x, y)
+        if right != -1:
+            recurse(right, x + dx, y - 1, dx * 0.65, x, y)
+
+    recurse(0, x=0, y=0, dx=1.2)
+
+    # === ВАЖНО: сначала линии, затем узлы ===
+    for tr in edge_traces:
+        fig.add_trace(tr)
+    for tr in node_traces:
+        fig.add_trace(tr)
+
+    fig.update_layout(
+        height=800,
+        margin=dict(l=20, r=20, t=40, b=20),
+        plot_bgcolor="white",
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        hovermode="closest",
+        autosize=True
+    )
+    return fig
+
+
+
+# ==================== CALLBACK ====================
+@callback(
+    Output('dashboard', 'children'),
+    Input('depth-dropdown', 'value')
+)
+def update_dashboard(depth):
+    # Загружаем предобученное дерево
+    model = joblib.load(f'models/tree_depth_{depth}.joblib')
+
+    y_pred = model.predict(X_test)
+    y_pred_proba = model.predict_proba(X_test)[:, 1]
 
     fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
     roc_auc = auc(fpr, tpr)
     cm = confusion_matrix(y_test, y_pred)
 
-    return y_pred, y_pred_proba, fpr, tpr, roc_auc, cm
+    # 1. Дерево решений — чисто Plotly
+    tree_fig = plotly_tree(model, feature_names)
 
-# --- Dash ---
-app = dash.Dash(__name__)
-app.title = "Adult Income — Интерактивный анализ"
-
-app.layout = html.Div([
-    html.H1("Анализ дохода с деревом решений", style={'textAlign': 'center', 'margin': '30px'}),
-
-    html.Div([
-        html.Label("Выберите глубину дерева:", style={'fontWeight': 'bold', 'fontSize': 18}),
-        dcc.Dropdown(
-            id='depth-dropdown',
-            options=[{'label': f'Глубина {i}', 'value': i} for i in [2, 3, 4, 5, 6, 7, 8]],
-            value=4,
-            clearable=False,
-            style={'width': '50%', 'margin': '20px auto'}
+    # 2. Основной дашборд 2×2
+    main_fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            f"ROC-кривая (AUC = {roc_auc:.3f})",
+            "Матрица ошибок",
+            "PCA 2D — реальные метки",
+            "PCA 2D — предсказания модели"
         ),
-    ], style={'textAlign': 'center'}),
-
-    html.Hr(),
-
-    html.Div(id='tree-image', style={'textAlign': 'center', 'margin': '30px'}),
-
-    html.Div([
-        html.Div([html.H3("ROC-кривая"), dcc.Graph(id='roc-graph')], style={'width': '48%', 'display': 'inline-block'}),
-        html.Div([html.H3("Матрица ошибок"), dcc.Graph(id='cm-graph')], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'}),
-    ]),
-
-    html.Div([
-        html.H3("PCA визуализация", style={'textAlign': 'center', 'marginTop': '40px'}),
-        html.Div([
-            dcc.Graph(id='pca-2d-true', style={'width': '48%'}),
-            dcc.Graph(id='pca-2d-pred', style={'width': '48%'}),
-        ], style={'display': 'flex', 'justifyContent': 'space-around'}),
-        dcc.Graph(id='pca-3d', style={'height': '600px', 'marginTop': '20px'})
-    ])
-])
-
-# --- Callback ---
-@app.callback(
-    [Output('tree-image', 'children'),
-     Output('roc-graph', 'figure'),
-     Output('cm-graph', 'figure'),
-     Output('pca-2d-true', 'figure'),
-     Output('pca-2d-pred', 'figure'),
-     Output('pca-3d', 'figure')],
-    Input('depth-dropdown', 'value')
-)
-def update_all(depth):
-    tree_b64 = plot_tree_img(depth)
-    tree_img = html.Img(src=f'data:image/png;base64,{tree_b64}', style={'maxWidth': '100%', 'border': '2px solid #ddd'})
-
-    y_pred, y_pred_proba, fpr, tpr, roc_auc, cm = get_predictions(depth)
+        vertical_spacing=0.15, horizontal_spacing=0.12
+    )
 
     # ROC
-    roc_fig = go.Figure()
-    roc_fig.add_trace(go.Scatter(x=fpr, y=tpr, name=f'AUC = {roc_auc:.3f}', line=dict(width=3)))
-    roc_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], line=dict(dash='dash', color='gray'), showlegend=False))
-    roc_fig.update_layout(title=f'ROC-кривая (глубина = {depth})', template='plotly_white')
+    main_fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines',
+                                  line=dict(width=4, color='#e67e22')), row=1, col=1)
+    main_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines',
+                                  line=dict(dash='dash', color='gray')), row=1, col=1)
 
     # Confusion Matrix
-    cm_fig = px.imshow(cm, text_auto=True, color_continuous_scale='Blues',
-                       x=['<=50K', '>50K'], y=['<=50K', '>50K'])
-    cm_fig.update_layout(title=f'Матрица ошибок (глубина = {depth})')
+    main_fig.add_trace(go.Heatmap(z=cm, text=cm, texttemplate="%{text}",
+                                  colorscale='Blues', showscale=False,
+                                  x=['≤50K', '>50K'], y=['≤50K', '>50K']), row=1, col=2)
 
-    # PCA
-    pca2_true = px.scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
-                           color=y_test.map({0: '<=50K', 1: '>50K'}),
-                           title='PCA 2D: Реальные метки')
-    pca2_pred = px.scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
-                           color=pd.Series(y_pred).map({0: '<=50K', 1: '>50K'}),
-                           title='PCA 2D: Предсказания дерева')
-    pca3 = px.scatter_3d(x=X_test_pca3[:,0], y=X_test_pca3[:,1], z=X_test_pca3[:,2],
-                         color=y_test.map({0: '<=50K', 1: '>50K'}),
-                         title='PCA 3D')
+    # PCA 2D
+    main_fig.add_trace(go.Scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
+                                  mode='markers',
+                                  marker=dict(color=y_test,
+                                              colorscale=[COLOR_LE50K, COLOR_GT50K],
+                                              size=7, opacity=0.8)), row=2, col=1)
+    main_fig.add_trace(go.Scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
+                                  mode='markers',
+                                  marker=dict(color=y_pred,
+                                              colorscale=[COLOR_LE50K, COLOR_GT50K],
+                                              size=7, opacity=0.8)), row=2, col=2)
 
-    return tree_img, roc_fig, cm_fig, pca2_true, pca2_pred, pca3
+    main_fig.update_layout(height=900, title_text=f"Анализ модели (глубина = {depth})",
+                           title_x=0.5, template='plotly_white')
+
+    # 3D PCA
+    fig_3d = px.scatter_3d(x=X_test_pca3[:,0], y=X_test_pca3[:,1], z=X_test_pca3[:,2],
+                           color=y_test.map({0:'≤50K', 1:'>50K'}),
+                           color_discrete_map={'≤50K': COLOR_LE50K, '>50K': COLOR_GT50K},
+                           labels={'color': 'Доход'})
+    fig_3d.update_traces(marker=dict(size=4))
+    fig_3d.update_layout(height=700, scene_camera=dict(eye=dict(x=1.7, y=1.7, z=1.3)))
+
+    # Легенда
+    legend = html.Div([
+        html.Strong("Цветовая легенда для всех графиков:"),
+        html.Div([
+            html.Span("●", style={'color': COLOR_LE50K, 'fontSize': 30, 'margin': '0 10px'}),
+            html.Span("≤50K", style={'fontSize': 18}),
+            html.Span("  "),
+            html.Span("●", style={'color': COLOR_GT50K, 'fontSize': 30, 'margin': '0 10px'}),
+            html.Span(">50K", style={'fontSize': 18})
+        ], style={'margin': '20px', 'textAlign': 'center'})
+    ], style={'textAlign': 'center', 'padding': '20px', 'background': 'white',
+              'borderRadius': '10px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.1)',
+              'margin': '40px auto', 'width': '600px'})
+
+    return html.Div([
+        legend,
+
+        html.H2("Дерево решений (интерактивное, 100% Plotly)", style={'textAlign': 'center', 'margin': '50px 0 20px'}),
+        dcc.Graph(figure=tree_fig),
+
+        html.H2("Метрики и проекции данных", style={'textAlign': 'center', 'margin': '60px 0 30px'}),
+        dcc.Graph(figure=main_fig),
+
+        html.H2("3D-визуализация после PCA", style={'textAlign': 'center', 'margin': '70px 0 30px'}),
+        dcc.Graph(figure=fig_3d),
+    ], style={'maxWidth': '1500px', 'margin': '0 auto'})
+
 
 if __name__ == '__main__':
-    print("Запуск дашборда: http://127.0.0.1:8050")
-    app.run(debug=False)
+    app.run(debug=True)
