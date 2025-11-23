@@ -8,8 +8,6 @@ X_train = data['X_train']
 y_train = data['y_train']
 feature_names = data['feature_names']
 
-print("Обучение деревьев разной глубины...")
-
 for depth in range(2, 9):
     clf = DecisionTreeClassifier(
         max_depth=depth,
@@ -22,4 +20,4 @@ for depth in range(2, 9):
     joblib.dump(clf, path)
     print(f"  → Сохранено: {path}")
 
-print("Все деревья обучены и сохранены!")
+print("Все деревья обучены и сохранены")

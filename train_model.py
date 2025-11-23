@@ -7,7 +7,7 @@ from sklearn.decomposition import PCA
 
 def prepare_and_save_preprocessors():
     df = pd.read_csv('adult 3 (1).csv')
-    df = df.replace('?', pd.NA).dropna()
+    df = df.replace('?', pd.NA).dropna().drop(columns=['fnlwgt',])
 
     # Кодирование категориальных признаков
     categorical_cols = ['workclass', 'education', 'marital-status', 'occupation',
@@ -58,7 +58,7 @@ def prepare_and_save_preprocessors():
         'le_income': le_income
     }, 'models/preprocessors.joblib')
 
-    print("Предобработка завершена → models/preprocessors.joblib")
+    print("Предобработка завершена")
 
 if __name__ == '__main__':
     prepare_and_save_preprocessors()

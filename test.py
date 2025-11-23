@@ -130,13 +130,13 @@ fig_corr.update_layout(
 # --- Матрица диаграмм рассеивания (Scatter Matrix) ---
 df_analysis_for_scatter = df_analysis.copy()
 df_analysis_for_scatter['income_num'] = df_analysis_for_scatter['income_num'].astype(str)
-
+df_analysis_for_scatter['income_label'] = df_analysis_for_scatter['income_num'].map({'0': 'доход <=50', '1': 'доход > 50'})
 # Теперь используем преобразованный датафрейм
 fig_scatter_px = px.scatter_matrix(
     df_analysis_for_scatter,  # <-- Используем копию с изменённым типом
     dimensions=numeric_cols,
-    color='income_num',
-    color_discrete_map={'0': 'lightcoral', '1': 'lightgreen'}, # <-- Важно: ключи теперь строки!
+    color='income_label',
+    color_discrete_map={'доход <=50': 'lightcoral', 'доход > 50': 'lightgreen'}, # <-- Важно: ключи теперь строки!
     title="Матрица диаграмм рассеивания числовых признаков"
 )
 
@@ -150,7 +150,7 @@ fig_scatter_px.update_layout(
     height=1000,
     width=1000,
     legend=dict(
-        title="Доход >50K", # Название легенды
+        title="Доход ", # Название легенды
         orientation="v",
         yanchor="top",
         y=1,
@@ -250,6 +250,9 @@ fig_cm = px.imshow(
     labels=dict(x="Предсказано", y="Фактически"),
     x=['<50K', '>50K'],
     y=['<50K', '>50K']
+)
+fig_cm.update_traces(
+    hovertemplate="<b>Фактически:</b> %{y}<br><b>Предсказано:</b> %{x}<br><b>Количество:</b> %{z}<extra></extra>"
 )
 fig_cm.update_layout(
     xaxis_title="Предсказанный класс",
@@ -474,7 +477,7 @@ app.layout = html.Div([
     html.H2("Гистограммы распределений", style={'textAlign': 'center'}),
     dcc.Graph(id='multi-histogram-graph', figure=fig),
 
-    html.H2("Матрица корреляции", style={'textAlign': 'center'}),
+    html.H2("Матрица корреляций", style={'textAlign': 'center'}),
     dcc.Graph(id='correlation-heatmap', figure=fig_corr, style={'height': '600px'}),
 
     html.H2("Матрица диаграмм рассеивания", style={'textAlign': 'center'}), # <-- Изменён заголовок
@@ -596,7 +599,7 @@ app.layout = html.Div([
 
 
     html.H2("Кластеризация", style={'textAlign': 'center'}),
-    html.H2("Метрика силуэта", style={'textAlign': 'center'}),
+    html.H2("Анализ силуэта", style={'textAlign': 'center'}),
 
     # Dropdown для выбора числа кластеров
     html.Div([
