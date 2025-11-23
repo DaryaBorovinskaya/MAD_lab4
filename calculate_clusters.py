@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score, silhouette_samples
-import joblib # pip install joblib
+import joblib 
 
-# --- Загрузка и подготовка данных ---
+
 file_path = './adult 3 (1).csv'
 df = pd.read_csv(file_path)
 df = df.replace('?', pd.NA).dropna()
@@ -14,15 +14,12 @@ numeric_cols = ['age', 'educational-num', 'capital-gain', 'capital-loss', 'hours
 df_analysis = df.copy()
 df_analysis['income_num'] = (df_analysis['income'] == '>50K').astype(int)
 
-# Подготовка данных для кластеризации
 df_cluster = df_analysis.drop(columns=['income', 'income_num'])
 X_cluster = df_cluster[numeric_cols]
 
-# Стандартизация
-scaler = StandardScaler()
+scaler = RobustScaler()
 X_cluster_scaled = scaler.fit_transform(X_cluster)
 
-# --- Вычисления для разных n_clusters ---
 n_clusters_range = range(2, 6)
 results = {}
 

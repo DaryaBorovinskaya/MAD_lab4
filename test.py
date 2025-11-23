@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import RobustScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score, silhouette_samples
+import joblib
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -340,64 +341,99 @@ for i, feature in enumerate(numeric_cols):
     pdp_figures[feature] = fig_pdp
 
 
-df_cluster = df_analysis.copy()
+try:
+    # Загружаем словарь с результатами
+    cluster_results = joblib.load('cluster_results.pkl')
+    # Загружаем scaler (опционально, если понадобится)
+    # loaded_scaler = joblib.load('scaler.pkl')
 
-# Удаляем целевую переменную
-df_cluster = df_cluster.drop(columns=['income', 'income_num'])
+    print("Результаты кластеризации загружены из файла.")
 
-# Выбираем только числовые признаки (можно добавить и категориальные, закодировав их)
-X_cluster = df_cluster[numeric_cols]
+    def plot_silhouette_from_results(results_dict, n_clusters):
+        if n_clusters not in results_dict:
+            print(f"Результаты для n_clusters={n_clusters} не найдены.")
+            return go.Figure().update_layout(title=f"Нет данных для {n_clusters} кластеров")
 
-# Стандартизация признаков (важно для K-Means)
-scaler = RobustScaler() 
-X_cluster_scaled = scaler.fit_transform(X_cluster)
+        
+        data = results_dict[n_clusters]
+        cluster_labels = data['labels']
+        sample_silhouette_values = data['silhouette_samples'] # Это уже может быть подвыборка!
+        silhouette_avg = data['silhouette_avg']
 
-# Преобразуем обратно в DataFrame для удобства (опционально)
-X_cluster_scaled = pd.DataFrame(X_cluster_scaled, columns=numeric_cols)
+        unique_labels = np.unique(cluster_labels)
+        n_clusters_actual = len(unique_labels)
 
-# --- График силуэта ---
-def plot_silhouette_for_n_clusters(X, n_clusters_range):
-    all_figures = {}
-    print('begin KMeans')
-    for n_clusters in n_clusters_range:
-        clusterer = KMeans(n_clusters=n_clusters, random_state=42)
-
-        cluster_labels = clusterer.fit_predict(X)
-        silhouette_avg = silhouette_score(X, cluster_labels)
-        sample_silhouette_values = silhouette_samples(X, cluster_labels)
-
-        # Создаём подграфик для каждого числа кластеров
         fig_sil = go.Figure()
 
-        y_lower = 10
-        for i in range(n_clusters):
-            ith_cluster_silhouette_values = sample_silhouette_values[cluster_labels == i]
+        # --- Подвыборка для визуализации ---
+        max_points_for_plot = 1000 # <-- Уменьшено до 1000
+        total_points = len(sample_silhouette_values)
+
+        if total_points > max_points_for_plot:
+            # Проверяем, была ли подвыборка в calculate_clusters.py
+            sample_indices = data.get('sample_indices_used', None)
+            if sample_indices is not None:
+                cluster_labels_vis = cluster_labels[sample_indices]
+                sample_silhouette_values_vis = sample_silhouette_values
+            else:
+                # Создаём новую подвыборку
+                np.random.seed(42)
+                sample_indices = np.random.choice(total_points, size=max_points_for_plot, replace=False)
+                cluster_labels_vis = cluster_labels[sample_indices]
+                sample_silhouette_values_vis = sample_silhouette_values[sample_indices]
+        else:
+            cluster_labels_vis = cluster_labels
+            sample_silhouette_values_vis = sample_silhouette_values
+
+        colors = px.colors.qualitative.Set2
+        y_offset = 0
+
+        for i in range(n_clusters_actual):
+            mask = cluster_labels_vis == i
+            ith_cluster_silhouette_values = sample_silhouette_values_vis[mask]
+
+            if len(ith_cluster_silhouette_values) == 0:
+                continue
+
             ith_cluster_silhouette_values.sort()
-
             size_cluster_i = ith_cluster_silhouette_values.shape[0]
-            y_upper = y_lower + size_cluster_i
+            y_vals = np.arange(y_offset, y_offset + size_cluster_i)
 
-            fig_sil.add_trace(go.Scatter(
-                x=ith_cluster_silhouette_values,
-                y=np.arange(y_lower, y_upper),
-                mode='lines',
-                line=dict(width=0.5),
-                showlegend=False,
-                hovertemplate=f'Кластер {i}<br>Ширина: %{{x}}<extra></extra>'
+            # --- Ключевое изменение ---
+            # Plotly Bar с orientation='h' ожидает, что x - это значения (ширина), y - это позиции
+            # Убедимся, что x и y - это 1D массивы
+            x_vals = ith_cluster_silhouette_values.flatten() # На всякий случай
+            y_vals = y_vals.flatten() # На всякий случай
+
+            fig_sil.add_trace(go.Bar(
+                x=x_vals,
+                y=y_vals,
+                orientation='h',
+                name=f'Кластер {i}',
+                marker_color=colors[i % len(colors)],
+                marker_line=dict(width=0),  # Убираем границы, если мешают
+                opacity=1.0,
+                showlegend=True,
+                # Убираем hovertemplate, если он мешает
             ))
 
-            y_lower = y_upper + 10  # Разрыв между кластерами
+            y_offset += size_cluster_i
+
+        # --- Убираем range оси Y ---
+        # fig_sil.update_layout(
+        #     yaxis=dict(range=[0, y_offset]), # <-- Это может быть проблемой
+        # )
 
         # Горизонтальная линия для среднего значения силуэта
         fig_sil.add_shape(
             type='line',
             x0=silhouette_avg, y0=0,
-            x1=silhouette_avg, y1=y_lower - 10,
+            x1=silhouette_avg, y1=y_offset,
             line=dict(color='red', width=2, dash='dash'),
         )
         fig_sil.add_annotation(
             x=silhouette_avg,
-            y=y_lower - 10, # Приблизительно внизу графика
+            y=y_offset,
             text=f'Средний: {silhouette_avg:.3f}',
             showarrow=False,
             yshift=10,
@@ -409,25 +445,26 @@ def plot_silhouette_for_n_clusters(X, n_clusters_range):
         fig_sil.update_layout(
             title=f'Диаграмма силуэта для {n_clusters} кластеров',
             xaxis_title='Коэффициент силуэта',
-            yaxis_title='Номер кластера',
-            yaxis=dict(range=[0, y_lower]), # Устанавливаем диапазон оси Y
+            yaxis_title='Номер объекта (по кластерам)',
+            # yaxis=dict(range=[0, y_offset]), # <-- Закомментировано
             height=500,
-            width=700
+            width=700,
+            showlegend=True
         )
+        
+        return fig_sil
 
-        # Сохраняем фигуру в словарь
-        all_figures[n_clusters] = fig_sil
-        print(f'KMeans {n_clusters}')
-    print('end KMeans')
-    return all_figures
+except FileNotFoundError:
+    print("Файл 'cluster_results.pkl' не найден. Пожалуйста, сначала запустите 'calculate_clusters.py'.")
+    # Можно создать пустой словарь или обработать ошибку по-другому
+    silhouette_figures = {}
+    
+silhouette_figures = {}
+n_clusters_range = range(2, 6) # Убедитесь, что диапазон совпадает
 
-# Диапазон числа кластеров для проверки
-n_clusters_range = range(2, 6) # Например, от 2 до 5
-
-silhouette_figures = plot_silhouette_for_n_clusters(X_cluster_scaled, n_clusters_range)
-
-
-
+for n in n_clusters_range:
+    silhouette_figures[n] = plot_silhouette_from_results(cluster_results, n)
+n_clusters_range = range(2, 6)
 # --- Dash layout ---
 app = dash.Dash(__name__)
 
