@@ -21,10 +21,10 @@ COLOR_LE50K = '#3498db'   # синий
 COLOR_GT50K = '#e74c3c'   # красный
 
 app = dash.Dash(__name__)
-app.title = "Adult Income → Дерево решений (чисто Plotly)"
+app.title = "Adult Income → Дерево решений"
 
 app.layout = html.Div([
-    html.H1("Дерево решений + ROC + PCA (без Graphviz и Matplotlib)",
+    html.H1("Дерево решений + ROC + PCA",
             style={'textAlign': 'center', 'color': '#2c3e50', 'margin': '40px 0'}),
 
     html.Div([
@@ -212,7 +212,7 @@ def update_dashboard(depth):
     return html.Div([
         legend,
 
-        html.H2("Дерево решений (интерактивное, 100% Plotly)", style={'textAlign': 'center', 'margin': '50px 0 20px'}),
+        html.H2("Дерево решений", style={'textAlign': 'center', 'margin': '50px 0 20px'}),
         dcc.Graph(figure=tree_fig),
 
         html.H2("Метрики и проекции данных", style={'textAlign': 'center', 'margin': '60px 0 30px'}),
@@ -224,4 +224,5 @@ def update_dashboard(depth):
 
 
 if __name__ == '__main__':
+
     app.run(debug=True)
