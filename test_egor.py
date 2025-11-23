@@ -1,5 +1,6 @@
 # app.py
 import dash
+import pandas as pd
 from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -17,8 +18,8 @@ X_test_pca3 = prep['X_test_pca3']
 feature_names = prep['feature_names']
 
 # Цвета
-COLOR_LE50K = '#3498db'   # синий
-COLOR_GT50K = '#e74c3c'   # красный
+COLOR_GT50K = '#3498db'   # синий
+COLOR_LE50K = '#e74c3c'   # красный
 
 app = dash.Dash(__name__)
 app.title = "Adult Income → Дерево решений"
@@ -61,8 +62,6 @@ def plotly_tree(model, feature_names, class_names=["≤50K", ">50K"], max_depth=
         if tree.children_left[node_id] == tree.children_right[node_id] == -1:
             text = (
                 f"<b>{class_names[majority_class]}</b><br>"
-                f"samples = {int(total)}<br>"
-                f"value = [{int(value[0])}, {int(value[1])}]<br>"
                 f"gini = {tree.impurity[node_id]:.3f}"
             )
         else:
@@ -70,8 +69,6 @@ def plotly_tree(model, feature_names, class_names=["≤50K", ">50K"], max_depth=
             thr = tree.threshold[node_id]
             text = (
                 f"{feat} ≤ {thr:.3f}<br>"
-                f"samples = {int(total)}<br>"
-                f"value = [{int(value[0])}, {int(value[1])}]<br>"
                 f"gini = {tree.impurity[node_id]:.3f}"
             )
 
@@ -151,12 +148,10 @@ def update_dashboard(depth):
 
     # 2. Основной дашборд 2×2
     main_fig = make_subplots(
-        rows=2, cols=2,
+        rows=1, cols=2,
         subplot_titles=(
             f"ROC-кривая (AUC = {roc_auc:.3f})",
             "Матрица ошибок",
-            "PCA 2D — реальные метки",
-            "PCA 2D — предсказания модели"
         ),
         vertical_spacing=0.15, horizontal_spacing=0.12
     )
@@ -173,25 +168,28 @@ def update_dashboard(depth):
                                   x=['≤50K', '>50K'], y=['≤50K', '>50K']), row=1, col=2)
 
     # PCA 2D
-    main_fig.add_trace(go.Scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
-                                  mode='markers',
-                                  marker=dict(color=y_test,
-                                              colorscale=[COLOR_LE50K, COLOR_GT50K],
-                                              size=7, opacity=0.8)), row=2, col=1)
-    main_fig.add_trace(go.Scatter(x=X_test_pca2[:,0], y=X_test_pca2[:,1],
-                                  mode='markers',
-                                  marker=dict(color=y_pred,
-                                              colorscale=[COLOR_LE50K, COLOR_GT50K],
-                                              size=7, opacity=0.8)), row=2, col=2)
+    pca2_true = px.scatter(
+        x=X_test_pca2[:, 0], y=X_test_pca2[:, 1],
+        color=y_test.map({0: '<=50K', 1: '>50K'}),
+        labels={'x': 'PC1', 'y': 'PC2', 'color': 'Доход (факт)'},
+        title='PCA 2D: Истинные метки',
+        color_discrete_sequence=[COLOR_LE50K, COLOR_GT50K]
+    )
 
-    main_fig.update_layout(height=900, title_text=f"Анализ модели (глубина = {depth})",
-                           title_x=0.5, template='plotly_white')
+    # Предсказанные метки
+    pca2_pred = px.scatter(
+        x=X_test_pca2[:, 0], y=X_test_pca2[:, 1],
+        color=pd.Series(y_pred).map({0: '<=50K', 1: '>50K'}),
+        labels={'x': 'PC1', 'y': 'PC2', 'color': 'Доход (предсказание)'},
+        title='PCA 2D: Предсказания дерева',
+        color_discrete_sequence=[COLOR_LE50K, COLOR_GT50K]
+    )
 
     # 3D PCA
     fig_3d = px.scatter_3d(x=X_test_pca3[:,0], y=X_test_pca3[:,1], z=X_test_pca3[:,2],
                            color=y_test.map({0:'≤50K', 1:'>50K'}),
                            color_discrete_map={'≤50K': COLOR_LE50K, '>50K': COLOR_GT50K},
-                           labels={'color': 'Доход'})
+                           labels={'x': 'PC1', 'y': 'PC2', 'z': 'PC3', 'color': 'Доход'})
     fig_3d.update_traces(marker=dict(size=4))
     fig_3d.update_layout(height=700, scene_camera=dict(eye=dict(x=1.7, y=1.7, z=1.3)))
 
@@ -218,11 +216,19 @@ def update_dashboard(depth):
         html.H2("Метрики и проекции данных", style={'textAlign': 'center', 'margin': '60px 0 30px'}),
         dcc.Graph(figure=main_fig),
 
+        html.Div([
+            dcc.Graph(figure=pca2_true, style={"height": "500px", "width": "50%"}),
+            dcc.Graph(figure=pca2_pred, style={"height": "500px", "width": "50%"})
+        ], style={
+            "display": "flex",
+            "flexDirection": "row",
+            "justifyContent": "space-between"
+        }),
+
         html.H2("3D-визуализация после PCA", style={'textAlign': 'center', 'margin': '70px 0 30px'}),
         dcc.Graph(figure=fig_3d),
     ], style={'maxWidth': '1500px', 'margin': '0 auto'})
 
 
 if __name__ == '__main__':
-
     app.run(debug=True)
