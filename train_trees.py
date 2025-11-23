@@ -2,7 +2,6 @@ import joblib
 from sklearn.tree import DecisionTreeClassifier
 import os
 
-# Загружаем уже подготовленные данные
 data = joblib.load('models/preprocessors.joblib')
 X_train = data['X_train']
 y_train = data['y_train']
@@ -18,6 +17,5 @@ for depth in range(2, 9):
 
     path = f'models/tree_depth_{depth}.joblib'
     joblib.dump(clf, path)
-    print(f"  → Сохранено: {path}")
 
 print("Все деревья обучены и сохранены")

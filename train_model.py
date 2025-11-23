@@ -9,7 +9,6 @@ def prepare_and_save_preprocessors():
     df = pd.read_csv('adult 3 (1).csv')
     df = df.replace('?', pd.NA).dropna().drop(columns=['fnlwgt',])
 
-    # Кодирование категориальных признаков
     categorical_cols = ['workclass', 'education', 'marital-status', 'occupation',
                         'relationship', 'race', 'gender', 'native-country']
     encoders = {}
@@ -18,7 +17,6 @@ def prepare_and_save_preprocessors():
         df[col] = le.fit_transform(df[col])
         encoders[col] = le
 
-    # Целевая переменная
     le_income = LabelEncoder()
     le_income = LabelEncoder()
     df['income_encoded'] = le_income.fit_transform(df['income'])
@@ -30,7 +28,6 @@ def prepare_and_save_preprocessors():
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Стандартизация и PCA
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -41,7 +38,6 @@ def prepare_and_save_preprocessors():
     X_test_pca2 = pca_2d.transform(X_test_scaled)
     X_test_pca3 = pca_3d.transform(X_test_scaled)
 
-    # Сохраняем всё, что понадобится в дашборде
     os.makedirs('models', exist_ok=True)
     joblib.dump({
         'X_train': X_train,

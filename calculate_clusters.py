@@ -31,17 +31,14 @@ for n_clusters in n_clusters_range:
     silhouette_avg = silhouette_score(X_cluster_scaled, cluster_labels)
     sample_silhouette_values = silhouette_samples(X_cluster_scaled, cluster_labels)
 
-    # Сохраняем результаты для данного n_clusters
     results[n_clusters] = {
-        'model': kmeans, # Объект обученной модели
+        'model': kmeans,
         'labels': cluster_labels,
         'silhouette_avg': silhouette_avg,
         'silhouette_samples': sample_silhouette_values,
-        'scaler': scaler # Сохраняем scaler, если он понадобится позже
+        'scaler': scaler 
     }
     print(f"  Средний силуэт для {n_clusters} кластеров: {silhouette_avg:.3f}")
 
-# --- Сохранение результатов ---
-# Сохраняем словарь с результатами в файл
 joblib.dump(results, 'cluster_results.pkl')
 joblib.dump(scaler, 'scaler.pkl') 

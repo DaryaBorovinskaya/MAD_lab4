@@ -1,0 +1,820 @@
+import dash
+import pandas as pd
+import numpy as np
+import math
+from dash import dcc, html, Input, Output, callback
+from dash.exceptions import PreventUpdate
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import joblib
+import warnings
+warnings.filterwarnings('ignore')
+
+
+file_path = './adult 3 (1).csv'
+df = pd.read_csv(file_path)
+df = df.replace('?', pd.NA).dropna()
+
+numeric_cols = ['age', 'educational-num', 'capital-gain', 'capital-loss', 'hours-per-week']
+df_analysis = df.copy()
+df_analysis['income_num'] = (df_analysis['income'] == '>50K').astype(int)
+categorical_cols = ['workclass', 'education', 'marital-status', 
+                    'occupation', 'relationship', 'race', 'gender', 
+                    'native-country']
+
+rows = 2
+cols = 3
+
+fig = make_subplots( 
+    rows=rows, cols=cols,
+    subplot_titles=numeric_cols,
+    horizontal_spacing=0.08,
+    vertical_spacing=0.15,
+)
+
+for i, col in enumerate(numeric_cols):
+    data = df_analysis[col].dropna()
+    n = len(data)
+    if n == 0:
+        continue
+    count_intervals = int(1 + math.log2(df_analysis.shape[0]))
+    if count_intervals <= 0:
+        count_intervals = 1
+
+    row_pos = (i // cols) + 1
+    col_pos = (i % cols) + 1
+
+    fig.add_trace( 
+        go.Histogram(
+            x=data,
+            nbinsx=count_intervals,
+            marker_color='skyblue',
+            marker_line_color='black',
+            marker_line_width=1,
+            name=col,
+            showlegend=False,
+        ),
+        row=row_pos, col=col_pos
+    )
+
+    fig.update_xaxes(title_text="Значение", row=row_pos, col=col_pos)
+    fig.update_yaxes(title_text="Частота", row=row_pos, col=col_pos)
+
+fig.update_layout( 
+    title={
+        'text': "Распределения числовых признаков",
+        'x': 0.5,
+        'xanchor': 'center',
+        'font': {'size': 16}
+    },
+    showlegend=False,
+    height=700,
+    width=1400,
+)
+
+corr_data = df_analysis[numeric_cols]
+correlation_matrix = corr_data.corr(method='pearson')
+labels = numeric_cols
+
+fig_corr = go.Figure(data=go.Heatmap(
+    z=correlation_matrix.values,
+    x=labels,
+    y=labels,
+    colorscale='RdBu_r',
+    text=correlation_matrix.round(2).values,
+    texttemplate="%{text}",
+    textfont={"size": 12},
+    hoverongaps=False,
+    zmin=-1,
+    zmax=1,
+    colorbar=dict(
+        title=dict(
+            text="Корреляция",
+            side="right",
+        ),
+        tickvals=[-1, -0.5, 0, 0.5, 1],
+        ticktext=["-1", "-0.5", "0", "0.5", "1"]
+    )
+))
+
+fig_corr.update_layout(
+    title={
+        'text': "Матрица корреляции числовых признаков",
+        'x': 0.5,
+        'xanchor': 'center',
+        'font': {'size': 16}
+    },
+    xaxis_title="Признаки",
+    yaxis_title="Признаки",
+    height=600,
+    xaxis={'side': 'bottom', 'tickangle': 45},
+    yaxis={'side': 'left', 'autorange': 'reversed'},
+    margin=dict(l=50, r=50, t=80, b=50),
+)
+
+df_analysis_for_scatter = df_analysis.copy()
+df_analysis_for_scatter['income_num'] = df_analysis_for_scatter['income_num'].astype(str)
+df_analysis_for_scatter['income_label'] = df_analysis_for_scatter['income_num'].map({'0': 'доход <=50', '1': 'доход > 50'})
+
+fig_scatter_px = px.scatter_matrix(
+    df_analysis_for_scatter,  
+    dimensions=numeric_cols,
+    color='income_label',
+    color_discrete_map={'доход <=50': 'lightcoral', 'доход > 50': 'lightgreen'}, 
+    title="Матрица диаграмм рассеивания числовых признаков"
+)
+
+fig_scatter_px.update_layout(
+    title={
+        'text': "Матрица диаграмм рассеивания числовых признаков",
+        'x': 0.5,
+        'xanchor': 'center',
+        'font': {'size': 16}
+    },
+    height=1000,
+    width=1000,
+    legend=dict(
+        title="Доход ", 
+        orientation="v",
+        yanchor="top",
+        y=1,
+        xanchor="left",
+        x=1.02
+    )
+)
+
+X = df_analysis[numeric_cols]
+y = df_analysis['income_num'] 
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+log_reg = LogisticRegression(random_state=42, max_iter=1000)
+log_reg.fit(X_train, y_train)
+
+fig_pdp_list = []
+
+for i, feature in enumerate(numeric_cols):
+    feature_min = X_test[feature].min()
+    feature_max = X_test[feature].max()
+    feature_range = np.linspace(feature_min, feature_max, 100)
+    X_temp = np.tile(X_test.mean().values, (len(feature_range), 1)) 
+    X_temp[:, i] = feature_range
+    probas = log_reg.predict_proba(X_temp)[:, 1]
+
+    fig_pdp = go.Figure()
+    fig_pdp.add_trace(go.Scatter(
+        x=feature_range,
+        y=probas,
+        mode='lines',
+        name=f'{feature}',
+        line=dict(color='blue', width=2)
+    ))
+    fig_pdp.update_layout(
+        title=f'Влияние признака "{feature}" на вероятность дохода >50K',
+        xaxis_title=feature,
+        yaxis_title='P(income >50K)',
+        yaxis=dict(range=[0, 1]),
+        height=400,
+        width=600
+    )
+    fig_pdp_list.append(fig_pdp)
+
+y_pred = log_reg.predict(X_test)
+y_pred_proba = log_reg.predict_proba(X_test)[:, 1] 
+intercept = log_reg.intercept_[0]
+coeffs = log_reg.coef_[0]
+feature_names = numeric_cols
+
+z_equation_str = f"z = {intercept:.4f}"
+
+for feat, coef in zip(feature_names, coeffs):
+    sign = "+" if coef >= 0 else "-"
+    z_equation_str += f" {sign} ({abs(coef):.4f} * {feat})"
+
+full_equation_str = f"P(income >50K | X) = 1 / (1 + exp(-({z_equation_str})))"
+
+cm = confusion_matrix(y_test, y_pred)
+fig_cm = px.imshow(
+    cm,
+    text_auto=True,
+    color_continuous_scale='Blues',
+    title='Матрица ошибок (Logistic Regression)',
+    labels=dict(x="Предсказано", y="Фактически"),
+    x=['<50K', '>50K'],
+    y=['<50K', '>50K']
+)
+fig_cm.update_traces(
+    hovertemplate="<b>Фактически:</b> %{y}<br><b>Предсказано:</b> %{x}<br><b>Количество:</b> %{z}<extra></extra>"
+)
+fig_cm.update_layout(
+    xaxis_title="Предсказанный класс",
+    yaxis_title="Фактический класс",
+    height=500,
+    width=500
+)
+
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+roc_auc = auc(fpr, tpr)
+
+fig_roc = go.Figure()
+fig_roc.add_trace(go.Scatter(
+    x=fpr,
+    y=tpr,
+    mode='lines',
+    name=f'ROC-кривая (AUC = {roc_auc:.2f})',
+    line=dict(color='blue', width=2)
+))
+fig_roc.add_trace(go.Scatter(
+    x=[0, 1],
+    y=[0, 1],
+    mode='lines',
+    name='Случайная классификация',
+    line=dict(color='red', width=1, dash='dash')
+))
+fig_roc.update_layout(
+    title='ROC-кривая (Logistic Regression)',
+    xaxis_title='Доля ложных срабатываний (FPR)',
+    yaxis_title='Доля истинных срабатываний (TPR)',
+    xaxis=dict(range=[0, 1]),
+    yaxis=dict(range=[0, 1]),
+    height=500,
+    width=500
+)
+
+coefficients = log_reg.coef_[0] 
+feature_names = numeric_cols
+
+fig_coef = go.Figure(data=go.Bar(
+    x=feature_names,
+    y=coefficients,
+    marker_color='skyblue',
+    marker_line_color='black',
+    marker_line_width=1
+))
+fig_coef.update_layout(
+    title='Коэффициенты признаков (Logistic Regression)',
+    xaxis_title='Признак',
+    yaxis_title='Коэффициент',
+    height=500,
+    width=800
+)
+
+pdp_figures = {}
+
+for i, feature in enumerate(numeric_cols):
+    feature_min = X_test[feature].min()
+    feature_max = X_test[feature].max()
+    feature_range = np.linspace(feature_min, feature_max, 100)
+
+    X_temp = np.tile(X_test.mean().values, (len(feature_range), 1))
+    X_temp[:, i] = feature_range
+
+    probas = log_reg.predict_proba(X_temp)[:, 1]
+
+    fig_pdp = go.Figure()
+    fig_pdp.add_trace(go.Scatter(
+        x=feature_range,
+        y=probas,
+        mode='lines',
+        name=f'{feature}',
+        line=dict(color='blue', width=2)
+    ))
+    fig_pdp.update_layout(
+        title=f'Влияние признака "{feature}" на вероятность дохода >50K',
+        xaxis_title=feature,
+        yaxis_title='P(income >50K)',
+        yaxis=dict(range=[0, 1]),
+        height=500,
+        width=700
+    )
+    pdp_figures[feature] = fig_pdp
+
+try:
+    cluster_results = joblib.load('cluster_results.pkl')
+    
+    def plot_silhouette_from_results(results_dict, n_clusters):
+        if n_clusters not in results_dict:
+            print(f"Результаты для n_clusters={n_clusters} не найдены.")
+            return go.Figure().update_layout(title=f"Нет данных для {n_clusters} кластеров")
+
+        data = results_dict[n_clusters]
+        cluster_labels = data['labels']
+        sample_silhouette_values = data['silhouette_samples'] 
+        silhouette_avg = data['silhouette_avg']
+
+        unique_labels = np.unique(cluster_labels)
+        n_clusters_actual = len(unique_labels)
+
+        fig_sil = go.Figure()
+
+        max_points_for_plot = 1000 
+        total_points = len(sample_silhouette_values)
+
+        if total_points > max_points_for_plot:
+            sample_indices = data.get('sample_indices_used', None)
+            if sample_indices is not None:
+                cluster_labels_vis = cluster_labels[sample_indices]
+                sample_silhouette_values_vis = sample_silhouette_values
+            else:
+                np.random.seed(42)
+                sample_indices = np.random.choice(total_points, size=max_points_for_plot, replace=False)
+                cluster_labels_vis = cluster_labels[sample_indices]
+                sample_silhouette_values_vis = sample_silhouette_values[sample_indices]
+        else:
+            cluster_labels_vis = cluster_labels
+            sample_silhouette_values_vis = sample_silhouette_values
+
+        colors = px.colors.qualitative.Set2
+        y_offset = 0
+
+        for i in range(n_clusters_actual):
+            mask = cluster_labels_vis == i
+            ith_cluster_silhouette_values = sample_silhouette_values_vis[mask]
+
+            if len(ith_cluster_silhouette_values) == 0:
+                continue
+
+            ith_cluster_silhouette_values.sort()
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_vals = np.arange(y_offset, y_offset + size_cluster_i)
+
+            x_vals = ith_cluster_silhouette_values.flatten()
+            y_vals = y_vals.flatten() 
+
+            fig_sil.add_trace(go.Bar(
+                x=x_vals,
+                y=y_vals,
+                orientation='h',
+                name=f'Кластер {i}',
+                marker_color=colors[i % len(colors)],
+                marker_line=dict(width=0), 
+                opacity=1.0,
+                showlegend=True,
+            ))
+
+            y_offset += size_cluster_i
+
+        fig_sil.add_shape(
+            type='line',
+            x0=silhouette_avg, y0=0,
+            x1=silhouette_avg, y1=y_offset,
+            line=dict(color='red', width=2, dash='dash'),
+        )
+        fig_sil.add_annotation(
+            x=silhouette_avg,
+            y=y_offset,
+            text=f'Средний: {silhouette_avg:.3f}',
+            showarrow=False,
+            yshift=10,
+            bgcolor='white',
+            bordercolor='red',
+            borderwidth=1
+        )
+
+        fig_sil.update_layout(
+            title=f'Диаграмма силуэта для {n_clusters} кластеров',
+            xaxis_title='Коэффициент силуэта',
+            yaxis_title='Номер объекта (по кластерам)',
+            height=500,
+            width=700,
+            showlegend=True
+        )
+        
+        return fig_sil
+
+except FileNotFoundError:
+    print("Файл 'cluster_results.pkl' не найден. Пожалуйста, сначала запустите 'calculate_clusters.py'.")
+    silhouette_figures = {}
+    
+silhouette_figures = {}
+n_clusters_range = range(2, 6) 
+
+for n in n_clusters_range:
+    silhouette_figures[n] = plot_silhouette_from_results(cluster_results, n)
+n_clusters_range = range(2, 6)
+
+prep = joblib.load('models/preprocessors.joblib')
+X_test = prep['X_test']
+y_test = prep['y_test']
+X_test_pca2 = prep['X_test_pca2']
+X_test_pca3 = prep['X_test_pca3']
+feature_names = prep['feature_names']
+
+COLOR_GT50K = '#3498db'   
+COLOR_LE50K = '#e74c3c'  
+
+def plotly_tree(model, feature_names, class_names=["≤50K", ">50K"], max_depth=4):
+    tree = model.tree_
+    fig = go.Figure()
+    node_traces = []
+    edge_traces = []
+
+    def recurse(node_id, x, y, dx, parent_x=None, parent_y=None):
+        value = tree.value[node_id][0]
+        total = value.sum()
+        if total == 0:
+            return
+
+        majority_class = 1 if value[1] > value[0] else 0
+        color = "#e74c3c" if majority_class == 0 else "#3498db"
+
+        if tree.children_left[node_id] == tree.children_right[node_id] == -1:
+            text = (
+                f"<b>{class_names[majority_class]}</b><br>"
+                f"gini = {tree.impurity[node_id]:.3f}"
+            )
+        else:
+            feat = feature_names[tree.feature[node_id]]
+            thr = tree.threshold[node_id]
+            text = (
+                f"{feat} ≤ {thr:.3f}<br>"
+                f"gini = {tree.impurity[node_id]:.3f}"
+            )
+
+        node_traces.append(go.Scatter(
+            x=[x], y=[y],
+            text=[text],
+            mode="markers+text",
+            textposition="middle center",
+            marker=dict(
+                size=110,
+                color=color,
+                line=dict(width=3, color="#333")
+            ),
+            textfont=dict(size=11, color="#000"),
+            hoverinfo="text",
+            showlegend=False,
+        ))
+
+        if parent_x is not None:
+            edge_traces.append(go.Scatter(
+                x=[parent_x, x], y=[parent_y, y],
+                mode="lines",
+                line=dict(color="#555", width=2),
+                hoverinfo="none",
+                showlegend=False,
+            ))
+
+        left = tree.children_left[node_id]
+        right = tree.children_right[node_id]
+        if left != -1:
+            recurse(left, x - dx, y - 1, dx * 0.65, x, y)
+        if right != -1:
+            recurse(right, x + dx, y - 1, dx * 0.65, x, y)
+
+    recurse(0, x=0, y=0, dx=1.2)
+
+    for tr in edge_traces:
+        fig.add_trace(tr)
+    for tr in node_traces:
+        fig.add_trace(tr)
+
+    fig.update_layout(
+        height=800,
+        margin=dict(l=20, r=20, t=40, b=20),
+        plot_bgcolor="white",
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        hovermode="closest",
+        autosize=True
+    )
+    return fig
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("Визуализация данных (Dashboard)", style={'textAlign': 'center'}),
+
+    html.H2("Гистограммы распределений", style={'textAlign': 'center'}),
+    dcc.Graph(id='multi-histogram-graph', figure=fig),
+
+    html.H2("Матрица корреляций", style={'textAlign': 'center'}),
+    dcc.Graph(id='correlation-heatmap', figure=fig_corr, style={'height': '600px'}),
+
+    html.H2("Матрица диаграмм рассеивания", style={'textAlign': 'center'}), 
+    dcc.Graph(
+        id='scatter-matrix',
+        figure=fig_scatter_px,
+        style={
+            'display': 'block',
+            'margin-left': 'auto',
+            'margin-right': 'auto',
+            'width': '1000px'  
+        }
+    ),
+
+    html.H2("Модель: Логистическая регрессия", style={'textAlign': 'center'}),
+
+    html.H3("Уравнение модели:", style={'textAlign': 'center'}),
+    html.Div([
+        html.Pre(full_equation_str, style={
+            'textAlign': 'left', 
+            'margin': '20px auto', 
+            'padding': '10px',
+            'backgroundColor': '#f4f4f4', 
+            'border': '1px solid #ccc',
+            'borderRadius': '5px',
+            'maxWidth': '1000px',
+            'overflowX': 'auto', 
+            'fontFamily': 'monospace', 
+            'fontSize': '14px'
+        })
+    ], style={'textAlign': 'center'}), 
+
+    html.H2("Матрица ошибок", style={'textAlign': 'center'}),
+    dcc.Graph(
+        id='confusion-matrix',
+        figure=fig_cm,
+        style={
+            'display': 'block',
+            'margin-left': 'auto',
+            'margin-right': 'auto',
+            'width': '500px'
+        }
+    ),
+
+    html.H2("ROC-кривая", style={'textAlign': 'center'}),
+    dcc.Graph(
+        id='roc-curve',
+        figure=fig_roc,
+        style={
+            'display': 'block',
+            'margin-left': 'auto',
+            'margin-right': 'auto',
+            'width': '500px'
+        }
+    ),
+
+    html.H2("Коэффициенты признаков", style={'textAlign': 'center'}),
+    dcc.Graph(
+        id='feature-coefficients',
+        figure=fig_coef,
+        style={
+            'display': 'block',
+            'margin-left': 'auto',
+            'margin-right': 'auto',
+            'width': '800px'
+        }
+    ),
+
+    html.H2("Зависимость дохода от одного категориального признака", style={'textAlign': 'center'}),
+    html.Div([
+        html.Label("Признак:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+        dcc.Dropdown(
+            id='factor-dropdown',
+            options=[{'label': col, 'value': col} for col in categorical_cols],
+            value=categorical_cols[0],
+            clearable=False,
+            style={'width': '300px'}
+        )
+    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'marginBottom': '20px'}),
+    dcc.Graph(id='factor-dependency-graph'),
+
+    html.H2("Зависимость дохода от двух категориальных признаков", style={'textAlign': 'center'}),
+    html.Div([
+        html.Label("Фактор 1 (ось X):", style={'fontWeight': 'bold', 'marginRight': '5px'}),
+        dcc.Dropdown(
+            id='factor1-dropdown',
+            options=[{'label': col, 'value': col} for col in categorical_cols],
+            value=categorical_cols[0],
+            clearable=False,
+            style={'width': '200px', 'marginRight': '20px'}
+        ),
+        html.Label("Фактор 2 (цвет):", style={'fontWeight': 'bold', 'marginRight': '5px'}),
+        dcc.Dropdown(
+            id='factor2-dropdown',
+            options=[{'label': col, 'value': col} for col in categorical_cols],
+            value=categorical_cols[1] if len(categorical_cols) > 1 else categorical_cols[0],
+            clearable=False,
+            style={'width': '200px'}
+        )
+    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'marginBottom': '20px'}),
+    dcc.Graph(id='two-factor-bar'),
+
+    html.H2("Дерево решений", style={'textAlign': 'center'}),
+    
+    html.Div([
+        html.Label("Глубина дерева:", style={'fontWeight': 'bold', 'fontSize': 18}),
+        dcc.Dropdown(id='depth-dropdown',
+                     options=[{'label': f'Глубина {d}', 'value': d} for d in range(2, 9)],
+                     value=4, clearable=False,
+                     style={'width': '400px', 'margin': '20px auto'})
+    ], style={'textAlign': 'center'}),
+
+    html.Div(id='dashboard'), 
+
+    html.H2("Кластеризация", style={'textAlign': 'center'}),
+    html.H2("Анализ силуэта", style={'textAlign': 'center'}),
+
+    html.Div([
+        html.Label("Число кластеров:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+        dcc.Dropdown(
+            id='n-clusters-dropdown',
+            options=[{'label': str(n), 'value': n} for n in n_clusters_range],
+            value=n_clusters_range[0], 
+            searchable=False,
+            clearable=False,
+            style={'width': '100px'} 
+        )
+    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'marginBottom': '20px'}),
+
+    html.Div([
+        dcc.Graph(
+            id='silhouette-plot',
+            style={
+                'display': 'block',
+                'margin-left': 'auto',
+                'margin-right': 'auto',
+                'width': '700px',
+            }
+        )
+    ], style={'textAlign': 'center'}),
+])
+
+@app.callback(
+    Output('factor-dependency-graph', 'figure'),
+    Input('factor-dropdown', 'value')
+)
+def update_factor_dependency_plot(selected_factor):
+    temp_df = df_analysis.dropna(subset=[selected_factor, 'income_num']).copy()
+    if temp_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Нет данных", showarrow=False, font_size=20)
+        return fig
+    grouped = temp_df.groupby(selected_factor).agg(
+        mean_income=('income_num', 'mean'),
+        count=('income_num', 'count')
+    ).reset_index()
+    grouped.rename(columns={'mean_income': 'income_num'}, inplace=True)
+    grouped = grouped.sort_values('income_num', ascending=False)
+    fig = px.bar(
+        grouped,
+        x=selected_factor,
+        y='income_num',
+        title=f"Доход (>50K) в зависимости от '{selected_factor}'",
+        labels={'income_num': 'Доля >50K'},
+        hover_data=['count'], 
+        color='income_num',
+        color_continuous_scale='Blues'
+    )
+    fig.update_layout(xaxis_tickangle=-45, height=500)
+    return fig
+
+@app.callback(
+    Output('two-factor-bar', 'figure'),
+    Input('factor1-dropdown', 'value'),
+    Input('factor2-dropdown', 'value')
+)
+def update_two_factor_bar(factor1, factor2):
+    if factor1 == factor2:
+        temp_df = df_analysis.dropna(subset=[factor1, 'income_num']).copy()
+        if temp_df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="Нет данных", showarrow=False, font_size=20)
+            return fig
+        grouped = temp_df.groupby(factor1).agg(
+            mean_income=('income_num', 'mean'),
+            count=('income_num', 'count')
+        ).reset_index()
+        grouped.rename(columns={'mean_income': 'income_num'}, inplace=True)
+        fig = px.bar(
+            grouped,
+            x=factor1,
+            y='income_num',
+            title=f"Выбран один и тот же признак",
+            labels={'income_num': 'Доля >50K'},
+            hover_data=['count'],
+            height=500
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        return fig
+
+    temp_df = df_analysis.dropna(subset=[factor1, factor2, 'income_num']).copy()
+    if temp_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Нет данных", showarrow=False, font_size=20)
+        return fig
+
+    grouped = temp_df.groupby([factor1, factor2]).agg(
+        mean_income=('income_num', 'mean'),
+        count=('income_num', 'count')
+    ).reset_index()
+    grouped.rename(columns={'mean_income': 'income_num'}, inplace=True)
+    grouped = grouped.sort_values(factor1)
+
+    fig = px.bar(
+        grouped,
+        x=factor1,
+        y='income_num',
+        color=factor2,
+        barmode='group',
+        title=f"Доход (>50K) в зависимости от '{factor1}' и '{factor2}'",
+        labels={'income_num': 'Доля >50K'},
+        hover_data=['count'],  
+        height=500
+    )
+    fig.update_layout(
+        xaxis_tickangle=-45,
+        xaxis_title=factor1,
+        yaxis_title="Доля >50K",
+        legend_title=factor2
+    )
+    return fig
+
+@app.callback(
+    Output('silhouette-plot', 'figure'),
+    [Input('n-clusters-dropdown', 'value')]
+)
+def update_silhouette_plot(selected_n_clusters):
+    if selected_n_clusters in silhouette_figures:
+        return silhouette_figures[selected_n_clusters]
+    else:
+        return go.Figure().update_layout(title="График не найден")
+
+@callback(
+    Output('dashboard', 'children'),
+    Input('depth-dropdown', 'value')
+)
+def update_dashboard(depth):
+    model = joblib.load(f'models/tree_depth_{depth}.joblib')
+
+    y_pred = model.predict(X_test)
+    y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+    fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+    roc_auc = auc(fpr, tpr)
+    cm = confusion_matrix(y_test, y_pred)
+
+    tree_fig = plotly_tree(model, feature_names)
+
+    main_fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            f"ROC-кривая (AUC = {roc_auc:.3f})",
+            "Матрица ошибок",
+        ),
+        vertical_spacing=0.15, horizontal_spacing=0.12
+    )
+
+    main_fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines',
+                                  line=dict(width=4, color='#e67e22')), row=1, col=1)
+    main_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines',
+                                  line=dict(dash='dash', color='gray')), row=1, col=1)
+
+    main_fig.add_trace(go.Heatmap(z=cm, text=cm, texttemplate="%{text}",
+                                  colorscale='Blues', showscale=False,
+                                  x=['≤50K', '>50K'], y=['≤50K', '>50K']), row=1, col=2)
+
+    pca2_true = px.scatter(
+        x=X_test_pca2[:, 0], y=X_test_pca2[:, 1],
+        color=y_test.map({0: '<=50K', 1: '>50K'}),
+        labels={'x': 'PC1', 'y': 'PC2', 'color': 'Доход (факт)'},
+        color_discrete_sequence=[COLOR_LE50K, COLOR_GT50K]
+    )
+
+    fig_3d = px.scatter_3d(x=X_test_pca3[:,0], y=X_test_pca3[:,1], z=X_test_pca3[:,2],
+                           color=y_test.map({0:'≤50K', 1:'>50K'}),
+                           color_discrete_map={'≤50K': COLOR_LE50K, '>50K': COLOR_GT50K},
+                           labels={'x': 'PC1', 'y': 'PC2', 'z': 'PC3', 'color': 'Доход'})
+    fig_3d.update_traces(marker=dict(size=4))
+    fig_3d.update_layout(height=700, scene_camera=dict(eye=dict(x=1.7, y=1.7, z=1.3)))
+
+    legend = html.Div([
+        html.Strong("Цветовая легенда:"),
+        html.Div([
+            html.Span("●", style={'color': COLOR_LE50K, 'fontSize': 30, 'margin': '0 10px'}),
+            html.Span("≤50K", style={'fontSize': 18}),
+            html.Span(" "),
+            html.Span("●", style={'color': COLOR_GT50K, 'fontSize': 30, 'margin': '0 10px'}),
+            html.Span(">50K", style={'fontSize': 18})
+        ], style={'margin': '20px', 'textAlign': 'center'})
+    ], style={'textAlign': 'center', 'padding': '20px', 'background': 'white',
+              'borderRadius': '10px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.1)',
+              'margin': '40px auto', 'width': '600px'})
+
+    return html.Div([
+        legend,
+
+        html.H2("Дерево решений", style={'textAlign': 'center', 'margin': '50px 0 20px'}),
+        dcc.Graph(figure=tree_fig),
+
+        html.H2("Диаграмма рассеивания главных компонент (PCA)", style={'textAlign': 'center'}),
+
+        html.Div([
+            dcc.Graph(figure=pca2_true, style={"height": "500px", "width": "600px"}), 
+        ], 
+        style={
+            "display": "flex",
+            "flexDirection": "row",
+            "justifyContent": "center",
+            "width": "100%"
+        }),
+
+        dcc.Graph(figure=fig_3d),
+    ], style={'maxWidth': '1500px', 'margin': '0 auto'})
+
+if __name__ == '__main__':
+   app.run(debug=True)
