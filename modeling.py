@@ -11,7 +11,7 @@ def train_logistic_regression(X, y):
 
     y_pred = log_reg.predict(X_test)
     y_pred_proba = log_reg.predict_proba(X_test)[:, 1]
-
+ 
     cm = confusion_matrix(y_test, y_pred)
     fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
     roc_auc = auc(fpr, tpr)

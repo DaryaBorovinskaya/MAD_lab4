@@ -180,7 +180,7 @@ app.layout = html.Div([
     ], style={'textAlign': 'center'}),
 ])
 
-register_callbacks(app, df_analysis, numeric_cols, categorical_cols, silhouette_figures, n_clusters_range, prep, feature_names)
+register_callbacks(app, df_analysis, silhouette_figures, prep, feature_names)
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -15,7 +15,14 @@ df_analysis = df.copy()
 df_analysis['income_num'] = (df_analysis['income'] == '>50K').astype(int)
 
 df_cluster = df_analysis.drop(columns=['income', 'income_num'])
-X_cluster = df_cluster[numeric_cols]
+
+df_cluster = df_cluster[numeric_cols]
+df_cluster = df_cluster.fillna(df_cluster.median())
+log_cols = df_cluster.columns
+for col in log_cols:
+    df_cluster[col] = np.log1p(df_cluster[col])
+X_cluster = df_cluster
+
 
 scaler = RobustScaler()
 X_cluster_scaled = scaler.fit_transform(X_cluster)

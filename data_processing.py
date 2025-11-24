@@ -16,7 +16,7 @@ df_analysis = df.copy()
 df_analysis['income_num'] = (df_analysis['income'] == '>50K').astype(int)
 
 X = df_analysis[numeric_cols]
-y = df_analysis['income_num']
+y = df_analysis['income_num'] 
 
 def get_processed_data():
     return df_analysis, X, y, numeric_cols, categorical_cols

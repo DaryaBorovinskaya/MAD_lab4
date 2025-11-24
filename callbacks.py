@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 from visualizations import plotly_tree 
 
-def register_callbacks(app, df_analysis, numeric_cols, categorical_cols, silhouette_figures, n_clusters_range, prep, feature_names):
+def register_callbacks(app, df_analysis, silhouette_figures, prep, feature_names):
     @app.callback(
         Output('factor-dependency-graph', 'figure'),
         Input('factor-dropdown', 'value')

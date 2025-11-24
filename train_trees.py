@@ -3,7 +3,7 @@ from sklearn.tree import DecisionTreeClassifier
 import os
 
 data = joblib.load('models/preprocessors.joblib')
-X_train = data['X_train']
+X_train = data['X_train'] 
 y_train = data['y_train']
 feature_names = data['feature_names']
 

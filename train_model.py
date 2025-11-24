@@ -18,7 +18,6 @@ def prepare_and_save_preprocessors():
         encoders[col] = le
 
     le_income = LabelEncoder()
-    le_income = LabelEncoder()
     df['income_encoded'] = le_income.fit_transform(df['income'])
 
     X = df.drop(['income', 'income_encoded'], axis=1)
@@ -29,7 +28,6 @@ def prepare_and_save_preprocessors():
     )
 
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
     pca_2d = PCA(n_components=2).fit(X_test_scaled)
