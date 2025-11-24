@@ -8,29 +8,32 @@ import numpy as np
 def create_histograms(df_analysis, numeric_cols):
     rows = 2
     cols = 3
+    count_intervals = int(1 + math.log2(df_analysis.shape[0]))
+    print(f'количество данных {df_analysis.shape[0]}')
+    if count_intervals <= 0:
+        count_intervals = 1
+
     fig = make_subplots(
         rows=rows, cols=cols,
         subplot_titles=numeric_cols,
         horizontal_spacing=0.08,
         vertical_spacing=0.15,
     )
-
+    
     for i, col in enumerate(numeric_cols):
         data = df_analysis[col].dropna()
         n = len(data)
         if n == 0:
             continue
-        count_intervals = int(1 + math.log2(df_analysis.shape[0]))
-        if count_intervals <= 0:
-            count_intervals = 1
-
+        
         row_pos = (i // cols) + 1
         col_pos = (i % cols) + 1
 
+        bins = np.linspace(data.min(), data.max(), count_intervals + 1)
         fig.add_trace(
             go.Histogram(
                 x=data,
-                nbinsx=count_intervals,
+                xbins=dict(start=bins[0], end=bins[-1], size=(bins[-1] - bins[0]) / count_intervals),
                 marker_color='skyblue',
                 marker_line_color='black',
                 marker_line_width=1,
