@@ -9,7 +9,6 @@ def create_histograms(df_analysis, numeric_cols):
     rows = 2
     cols = 3
     count_intervals = int(1 + math.log2(df_analysis.shape[0]))
-    print(f'количество данных {df_analysis.shape[0]}')
     if count_intervals <= 0:
         count_intervals = 1
 
@@ -53,7 +52,6 @@ def create_histograms(df_analysis, numeric_cols):
             'xanchor': 'center',
             'font': {'size': 16}
         },
-        showlegend=False,
         height=700,
         width=1400,
     )
@@ -219,15 +217,10 @@ def create_silhouette_plots(cluster_results, n_clusters_range):
         total_points = len(sample_silhouette_values)
 
         if total_points > max_points_for_plot:
-            sample_indices = data.get('sample_indices_used', None)
-            if sample_indices is not None:
-                cluster_labels_vis = cluster_labels[sample_indices]
-                sample_silhouette_values_vis = sample_silhouette_values
-            else:
-                np.random.seed(42)
-                sample_indices = np.random.choice(total_points, size=max_points_for_plot, replace=False)
-                cluster_labels_vis = cluster_labels[sample_indices]
-                sample_silhouette_values_vis = sample_silhouette_values[sample_indices]
+            np.random.seed(42)
+            sample_indices = np.random.choice(total_points, size=max_points_for_plot, replace=False)
+            cluster_labels_vis = cluster_labels[sample_indices]
+            sample_silhouette_values_vis = sample_silhouette_values[sample_indices]
         else:
             cluster_labels_vis = cluster_labels
             sample_silhouette_values_vis = sample_silhouette_values

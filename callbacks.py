@@ -122,35 +122,10 @@ def register_callbacks(app, df_analysis, silhouette_figures, prep, feature_names
         X_test_pca2 = prep['X_test_pca2']
         X_test_pca3 = prep['X_test_pca3']
 
-        y_pred = model.predict(X_test)
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
-
-        fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
-        roc_auc = auc(fpr, tpr)
-        cm = confusion_matrix(y_test, y_pred)
-
         tree_fig = plotly_tree(model, feature_names)
-
-        main_fig = make_subplots(
-            rows=1, cols=2,
-            subplot_titles=(
-                f"ROC-кривая (AUC = {roc_auc:.3f})",
-                "Матрица ошибок",
-            ),
-            vertical_spacing=0.15, horizontal_spacing=0.12
-        )
 
         COLOR_GT50K = '#3498db'
         COLOR_LE50K = '#e74c3c'
-
-        main_fig.add_trace(go.Scatter(x=fpr, y=tpr, mode='lines',
-                                      line=dict(width=4, color='#e67e22')), row=1, col=1)
-        main_fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines',
-                                      line=dict(dash='dash', color='gray')), row=1, col=1)
-
-        main_fig.add_trace(go.Heatmap(z=cm, text=cm, texttemplate="%{text}",
-                                      colorscale='Blues', showscale=False,
-                                      x=['≤50K', '>50K'], y=['≤50K', '>50K']), row=1, col=2)
 
         pca2_true = px.scatter(
             x=X_test_pca2[:, 0], y=X_test_pca2[:, 1],
