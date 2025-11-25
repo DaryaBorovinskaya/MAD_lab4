@@ -26,7 +26,7 @@ except FileNotFoundError:
     silhouette_figures = {}
     n_clusters_range = range(2, 6)
 
-prep = joblib.load('models/preprocessors.joblib')
+prep = joblib.load('models/preprocessors.joblib')  
 feature_names = prep['feature_names'] 
 
 app = Dash(__name__)
