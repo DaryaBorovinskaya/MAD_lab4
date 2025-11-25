@@ -206,14 +206,32 @@ def update_boxplot(selected_feature):
     Output('bar-chart', 'figure'),
     Input('bar-feature', 'value')
 )
-def update_bar(selected_feature):
-    counts = df_analysis[selected_feature].value_counts().reset_index()
-    counts.columns = [selected_feature, 'count']
-    fig = px.bar(counts, x=selected_feature, y='count',
-                 title=f"Столбчатая диаграмма: {selected_feature}",
-                 labels={selected_feature: selected_feature, 'count': 'Частота'},
-                 color_discrete_sequence=px.colors.qualitative.Set3)
+def update_stacked_bar(selected_feature):
+    # Группируем по признаку и целевой переменной
+    grouped = df_analysis.groupby([selected_feature, 'income']).size().reset_index(name='count')
+    
+    # Считаем общее количество в каждой категории (для сортировки)
+    total_counts = grouped.groupby(selected_feature)['count'].sum().sort_values(ascending=False)
+    sorted_categories = total_counts.index.tolist()
+    
+    # Строим stacked bar chart
+    fig = px.bar(
+        grouped,
+        x=selected_feature,
+        y='count',
+        color='income',
+        title=f"Распределение по классам: {selected_feature}",
+        labels={'count': 'Количество', selected_feature: selected_feature},
+        color_discrete_map={'<=50K': '#1f77b4', '>50K': '#ff7f0e'},
+        barmode='stack',
+        category_orders={selected_feature: sorted_categories}  # ← ключевая строка!
+    )
+
     fig.update_xaxes(tickangle=45)
+    fig.update_layout(
+        legend_title_text='Доход',
+        height=500
+    )
     return fig
 
 # --- Запуск сервера ---
